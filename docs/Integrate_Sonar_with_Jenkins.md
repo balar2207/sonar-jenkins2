@@ -1,7 +1,7 @@
 <img src="../images/c4logo.png">
 
 ### Steps:
-1. Login to your Linux VM and [Install docker](https://github.com/submah/docker-tutorials/edit/master/install_docker_centos7.md).
+1. Login to your Linux VM and [Install docker](https://github.com/c4clouds/docker-tutorials/edit/master/install_docker_centos7.md).
 
 2. Create Two Docker Volumes to persist Jenkins and Sonar data
     
@@ -9,7 +9,7 @@
     
     * docker volume create jenkins-data
 
-3. Launch Container based Sonar [Click Here to see the steps](https://github.com/submah/sonar-jenkins/blob/main/docs/ting_up_a_Dockerized_SonarScanner.md)
+3. Launch Container based Sonar [Click Here to see the steps](https://github.com/c4clouds/sonar-jenkins/blob/main/docs/ting_up_a_Dockerized_SonarScanner.md)
 
 4. Launch Container based Jenkins with below command.
 
@@ -43,7 +43,7 @@
 10. Under Source Code  Management select **git** Repository and Provide the Github Codebase URL.
 
     * You can use the same Maven-HelloWorld project for the demo here is the git URL
-    **https://github.com/submah/maven-helloworld.git**
+    **https://github.com/c4clouds/maven-helloworld.git**
 
     * On Build section select **Execute SonarQube Scanner** and in the **Analysis properties** provide the below code
     ```
