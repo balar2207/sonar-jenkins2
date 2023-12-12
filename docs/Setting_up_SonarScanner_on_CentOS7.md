@@ -1,234 +1,227 @@
 <img src="../images/c4logo.png">
 
-
-## Install and configure Sonar on Centos 7
-
-
-
-## Sonarqube requirements
-1. Server with minimum 2GB/1 vcpu capacity
-2. PostgreSQL version 9.3 or greater.
-3. OpenJDK 11 or JRE 11
-4. All sonarquber process should run as a non-root ## sonarqube ## user.
-
-## Update: MySQL for Sonarqube is depricated
-
-
-**Prep the Server With Required Softwares**
-```bash
-yum install wget unzip -y
-
-yum install java-11-openjdk-devel -y
-
-sysctl -w vm.max_map_count=524288
-
-sysctl -w fs.file-max=131072
-
-ulimit -n 131072
-
-ulimit -u 8192
+### Steps:
+## 1. Install Java 17
+```
+sudo yum -y update
+```
+```
+sudo yum -y install wget vim curl unzip 
+```
+```
+wget https://download.oracle.com/java/17/latest/jdk-17_linux-x64_bin.rpm
+```
+```
+sudo yum -y install ./jdk-17_linux-x64_bin.rpm
+```
+```
+java -version
+```
+## 2. Configure SELinux as Permissive
 
 ```
-## Open the file /etc/security/limits.conf
+sudo setenforce 0
 ```
-vi /etc/security/limits.conf
-#add the below lines
-elasticsearch   soft    nofile          65536
-elasticsearch   hard    nofile          65536
-elasticsearch   memlock unlimited
-sonarqube - nofile 65535
+```
+sudo sed -i 's/^SELINUX=enforcing$/SELINUX=permissive/' /etc/selinux/config
+```
+## 3. Tweak max_map_count and fs.file-max
+
+```
+sudo tee -a /etc/sysctl.conf<<EOF
+vm.max_map_count=262144
+fs.file-max=65536
+EOF
+```
+```
+sudo sysctl --system
+```
+## 4. Create a user for sonar
+
+```
+sudo useradd sonar
 ```
 
-**Setup PostgreSQL 10 Database For SonarQube**
-```bash
-#Install PostgreSQL 10 repo
-yum install https://download.postgresql.org/pub/repos/yum/reporpms/EL-7-x86_64/pgdg-redhat-repo-latest.noarch.rpm -y
+## 5. Add sonar user to sudoers file
 
-#Install PostgreSQL 10 repo
-yum install postgresql10-server postgresql10-contrib -y
+```
+echo "sonar   ALL=(ALL)       NOPASSWD: ALL" | sudo tee -a /etc/sudoers
+```
+## 6. Install and configure PostgreSQL
 
-#Initialize the database
-/usr/pgsql-10/bin/postgresql-10-setup initdb
+```
+sudo yum install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-7-x86_64/pgdg-redhat-repo-latest.noarch.rpm
+```
+```
+sudo yum -y install postgresql14-server postgresql14
+```
+```
+sudo /usr/pgsql-14/bin/postgresql-14-setup initdb
+```
+```
+sudo systemctl enable --now postgresql-14
+```
+## 7. Change the pg_hba.conf file settings
 
-#Open /var/lib/pgsql/10/data/pg_hba.conf file to change the authentication to md5.
-
-vi /var/lib/pgsql/10/data/pg_hba.conf
-
-#Find the following lines at the bottom of the file and change peer to trust and idnet to md5
+```
+sed -i 's/local\s\+all\s\+all\s\+peer/local   all             all                                     trust/'  /var/lib/pgsql/14/data/pg_hba.conf
+```
+```
+sed -i 's/host    all             all             127.0.0.1\/32            scram-sha-256/host    all             all             127.0.0.1\/32            md5/' /var/lib/pgsql/14/data/pg_hba.conf
+```
+```
+sed -i 's/host    all             all             ::1\/128                 scram-sha-256/host    all             all             ::1\/128                 md5/' /var/lib/pgsql/14/data/pg_hba.conf
+```
+```
+echo "host    all             all             0.0.0.0/0            md5" | sudo tee -a /var/lib/pgsql/14/data/pg_hba.conf
 ```
 <img src="../images/peer-to-trust.JPG">
 
-**Start and enable PostgreSQL**
-```bash
-systemctl start postgresql-10
-systemctl enable postgresql-10
+## 8. Enable remote Access to PostgreSQL
+
+Edit the file /var/lib/pgsql/14/data/postgresql.conf and set Listen address to your server IP address or "*" for all interfaces.
+
 ```
->**Note** You can verify the installation using the following version select query.
-```bash
-sudo -u postgres /usr/pgsql-10/bin/psql -c "SELECT version();"
+echo "listen_addresses = '*'" | sudo tee -a /var/lib/pgsql/14/data/postgresql.conf
 ```
 
-## Setup Sonarqube User and Database
-```bash
-#Change the default password of the Postgres user. All Postgres commands have to be executed from this user.
+## 9. Restart PostgreSQL service
 
-sudo passwd postgres #set the password as postgres
+```
+sudo systemctl restart postgresql-14
+```
 
-#Login as postgres user with the new password.
+## 10. Set PostgreSQL admin user
 
-su - postgres
-
-#create user sonarqube
-
-createuser sonarqube
-
-#Login to the PostgreSQL CLI.
-psql
-
-#Create a sonarqubedb database
-
-create database sonarqubedb;
-
-#Create the sonar DB user with a strongly encrypted password. Replace your-strong-password with a strong password.
-
-create user sonar with encrypted password 'your-strong-password'; 
-
-#Next, grant all privileges to sonrqube user on sonarqubedb.
-
-grant all privileges on database sonarqubedb to sonar
-
-#Exit the psql prompt using the following command.
-
-\q
+```
+sudo su - postgres
+```
+```
+psql 
+```
+```
+alter user postgres with password 'Sonar@123';
+```
+```
 exit
 ```
 
-## Setup Sonarqube Web Server
-```bash
-#Download the latest sonarqube installation file to /opt folder. You can get the latest download link from here. http://www.sonarqube.org/downloads/
-
-cd /opt
-
-wget https://binaries.sonarsource.com/Distribution/sonarqube/sonarqube-9.0.1.46107.zip
-
-#Unzip sonarqube source files and rename the folder.
-
-unzip sonarqube-9.0.1.46107.zip
-
-mv sonarqube-9.0.1.46107 sonarqube
-
-# Open /opt/sonarqube/conf/sonar.properties file.
-
-vi /opt/sonarqube/conf/sonar.properties
+## 11. Create a SonarQube user and database
 
 ```
->**Note** Uncomment and edit the parameters as shown below. Change the password accordingly. 
-You will find jdbc parameter under PostgreSQL section
-
-```text
-sonar.jdbc.username=sonar
-sonar.jdbc.password=your-strong-password
-sonar.jdbc.url=jdbc:postgresql://localhost/sonarqube
-sonar.web.context=/sonar
-sonar.web.javaOpts=-Xmx2048m -Xms1024m -XX:+HeapDumpOnOutOfMemoryError
+createdb sonarqube
+```
+```
+psql
+```
+```
+CREATE USER sonarqube WITH PASSWORD 'Sonar@123';
+```
+```
+GRANT ALL PRIVILEGES ON DATABASE sonarqube to sonarqube;
+```
+```
+\q
 ```
 
->**Note** By default, sonar will run on 9000. If you want on port 80 or any other port, change the following parameters for accessing the web console on that specific port.
+## 12. Download and install SonarQube
 
 ```
+wget https://binaries.sonarsource.com/Distribution/sonarqube/sonarqube-9.9.1.69595.zip
+```
+```
+unzip sonarqube-*.zip
+```
+
+```
+sudo mv sonarqube-*/  /opt/sonarqube
+```
+```
+rm  -rf sonarqube*
+```
+```
+ulimit -l unlimited
+```
+```
+ulimit -n 65536
+```
+```
+echo "transport.tcp.compress: true" | sudo tee -a /opt/sonarqube/elasticsearch/config/elasticsearch.yml
+```
+```
+echo "transport.tcp.port: 9300" | sudo tee -a /opt/sonarqube/elasticsearch/config/elasticsearch.yml
+```
+
+## 13. Configure SonarQube
+
+```
+sudo tee -a /opt/sonarqube/conf/sonar.properties<<EOF
+##Database details
+sonar.jdbc.username=sonarqube
+sonar.jdbc.password=Sonar@123
+sonar.jdbc.url=jdbc:postgresql://localhost/sonarqube?
+
+##How you will access SonarQube Web UI
 sonar.web.host=0.0.0.0
-sonar.web.port=80
+sonar.web.port=9000
+
+##Java options
+sonar.web.javaOpts=-server -Xms512m -Xmx512m -XX:+HeapDumpOnOutOfMemoryError
+sonar.search.javaOpts=-Xmx512m -Xms512m -XX:MaxDirectMemorySize=256m -XX:+HeapDumpOnOutOfMemoryError
+
+##Also add the following Elasticsearch storage paths
+sonar.path.data=/var/sonarqube/data
+sonar.path.temp=/var/sonarqube/temp
+EOF
 ```
->**Note** If you want to access sonarqube some path like http://url:/sonar, change the following parameter.
-
 ```
-sonar.web.context=/sonar
+sudo chown -R sonar:sonar /opt/sonarqube
 ```
-
-## Add Sonarqube User and Privileges
-
-```bash
-#Create a user named sonarqube
-
-useradd sonarqube
-
-#make it the owner of the /opt/sonarqube directory.
-
-chown -R sonarqube:sonarqube /opt/sonarqube
 ```
-
-## Start Sonarqube Service
-To start sonar service, you need to use the script in sonarqube bin directory.
-
-```bash
-#Login as sonarqube user
-
-sudo su - sonarqube
-
-#Navigate to the start script directory.
-
-cd /opt/sonarqube/bin/linux-x86-64
-
-#Open the SonarQube startup script and specify the sonarqube user details.
-
-vi /opt/sonarqube/bin/linux-x86-64/sonar.sh +49
-
-#add below line
-
-RUN_AS_USER=sonarqube
-
-#Start the sonarqube service
-
-./sonar.sh start
-
-#Check the application status. If it is in running state, you can access the sonarqube dashboard using the DNS name or Ip address of your server:9000/sonar
-
-./sonar.sh status
+sudo mkdir -p /var/sonarqube
+```
+```
+sudo chown -R sonar:sonar /var/sonarqube
 ```
 
-## Setting up Sonarqube as a service
+## 14. Add SonarQube SystemD service file
 
-```bash
-#Create a file /etc/systemd/system/sonarqube.service
-
-vi  /etc/systemd/system/sonarqube.service
-
-#Copy the following content on to the file.
 ```
-```text
+sudo tee -a /etc/systemd/system/sonarqube.service<<EOF
 [Unit]
 Description=SonarQube service
 After=syslog.target network.target
 
 [Service]
-Type=simple
-User=sonarqube
-Group=sonarqube
-PermissionsStartOnly=true
-ExecStart=/bin/nohup java -Xms32m -Xmx32m -Djava.net.preferIPv4Stack=true -jar /opt/sonarqube/lib/sonar-application-9.0.1.46107.jar
-StandardOutput=syslog
+Type=forking
+ExecStart=/opt/sonarqube/bin/linux-x86-64/sonar.sh start
+ExecStop=/opt/sonarqube/bin/linux-x86-64/sonar.sh stop
 LimitNOFILE=65536
-LimitNPROC=8192
-TimeoutStartSec=5
-Restart=always
+LimitNPROC=4096
+User=sonar
+Group=sonar
+Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target
-```
-## Start and enable sonarqube
-```bash
-systemctl daemon-reload
-systemctl start sonarqube
-systemctl enable sonarqube
-systemctl status  sonarqube
+EOF
 ```
 
+```
+sudo systemctl daemon-reload
+```
+```
+sudo systemctl start sonarqube.service
+```
+```
+sudo systemctl status sonarqube.service
+```
+```
+sudo systemctl enable sonarqube.service
+```
 
+## 15. Alter Firewall rules to allow SonarQube Access
 
-
-
-
-
-
-
-
+```
+sudo firewall-cmd --permanent --add-port=9000/tcp && sudo firewall-cmd --reload
+```
