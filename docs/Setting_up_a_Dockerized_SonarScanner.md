@@ -1,7 +1,7 @@
 <img src="../images/c4logo.png">
 
 ### Steps:
-1. Login to your Linux VM and [Install docker](https://github.com/submah/docker-tutorials/edit/master/install_docker_centos7.md).
+1. Login to your Linux VM and [Install docker](https://github.com/c4clouds/docker-tutorials/edit/master/install_docker_centos7.md).
 
 2. Create a Docker Volume to persist Sonar data
     * docker volume create sonar-data
